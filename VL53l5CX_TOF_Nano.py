@@ -7,11 +7,15 @@ import numpy as np
 from PIL import Image
 from matplotlib import cm
 import cv2
+import socket
+import json
 
 ROTATE_TOF = -1 #1=90, 2=180 etc
 MIN_DIST = 100
 MAX_DIST = 1500
 DEBUG = True
+UDP_PORT = 6009
+
 
 def cullReading_to_uInt8(minDist, maxDist, frameToCull):
     _frameToCull = np.where((frameToCull < minDist) | (frameToCull > maxDist), 0, frameToCull)
@@ -177,6 +181,43 @@ def detect_blob_movement(previous_grid, current_grid):
     direction = calculate_movement_direction(previous_centroid, current_centroid)
     return direction
 
+def get_distance_from_blob_centroid(grid, centroid):
+    #Sometimes the centre of the blob detected is blank, so average the square around it 
+    distance = 0
+    width, height = grid.shape
+    if(centroid != None):
+        centroid = np.array(centroid)
+        distance = grid[(centroid[0], centroid[1])]
+        if(distance != 0):
+            return distance
+        else:
+            vecsToCheck = []
+            vecsToCheck.append([0, 1])
+            vecsToCheck.append([1, 1])
+            vecsToCheck.append([1, 0])
+            vecsToCheck.append([0, -1])
+            vecsToCheck.append([-1, -1])
+            vecsToCheck.append([-1, 0])
+            
+            nCheck = 0
+            nAv = 0
+            for vec in vecsToCheck:
+                vecToCheck = (centroid + vec)
+                if(vecToCheck[0] < width and vecToCheck[0] > 0):
+                    if(vecToCheck[1] < height and vecToCheck[1] > 0):
+                        val = grid[(vecToCheck[0], vecToCheck[1])]
+                        if(val > 0):
+                            nAv += val
+                            nCheck += 1
+            if(nCheck >0):
+                distance = nAv /nCheck
+    
+    return distance
+            
+
+
+
+
 class vl53_TOF_Sensor():
     def setup(self, rotate=ROTATE_TOF):
         print("Uploading firmware, please wait...")
@@ -215,6 +256,11 @@ class vl53_TOF_Sensor():
 
 
 def main():
+    
+    target_ip = '127.0.0.1'
+    target_port = UDP_PORT
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
     tofSensor = vl53_TOF_Sensor()
     tofSensor.setup()
     tofSensor.startSensor()
@@ -225,7 +271,11 @@ def main():
     vSpeed = 0.5
     velocity = 0
     posX = 0
+    
+
+
     while True:
+        messageInfo = {'inShot': "", 'direction': "", 'centroid': "" ,'distance': "" }
         if(tofSensor.isDataReady()):
             tof_frame = tofSensor.get_frame_uint8()
             width, height = tof_frame.shape
@@ -237,7 +287,6 @@ def main():
 
             #Blob Detection
             blobCentre = find_blob_centroid(tof_frame)
-            print(blobCentre)
 
             
             destX = calc_centroid(binFrame1) / width
@@ -248,11 +297,11 @@ def main():
             posXI = posX +1
             posXI /=2
             
-            #print("Position", posXI)
+            print("Position", posXI)
             velocity_to_send = 0
             if(abs(velocity) > 0.25):
                 velocity_to_send = velocity
-            #print("Velocity", velocity_to_send)
+            # print("Velocity", velocity_to_send)
 
             # Calc left right
             # rlCalc = calcLeftRight(binFrame1, binFrame2)
@@ -263,8 +312,25 @@ def main():
             
             #Optical Flow
             # flow_visual = calcOpticalFlow(tof_frame, last_tof_frame)
+            print("blobCentre", blobCentre)
+            print("distance_at_centroid", get_distance_from_blob_centroid(tof_frame, blobCentre))
+
+            if(blobCentre!=None):
+                messageInfo['inShot'] = 1
+                messageInfo["centroid"] = blobCentre
+                distance_at_centroid = tof_frame[blobCentre]
+            else:
+                messageInfo['inShot'] = 0
+            
+            
+
+            
+            # messageInfo["distance"] = 
             flow_visual = tof_frame
             
+            #message = json.dumps(messageInfo).encode('utf-8')
+            #sock.sendto(message, (target_ip, target_port))
+
             # Resize images for visualization
             if(DEBUG):
                 flow_resized = cv2.resize(flow_visual, (256, 256), interpolation=cv2.INTER_NEAREST)
@@ -281,6 +347,7 @@ def main():
                 break
     
     cv2.destroyAllWindows()
+    sock.close()
 
 if __name__ == "__main__":
     main()
