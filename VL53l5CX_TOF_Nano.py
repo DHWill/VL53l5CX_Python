@@ -274,8 +274,8 @@ def main():
     
 
 
+    messageInfo = {'inShot': "False", 'centroid.x': "0" , 'centroid.y': "0" ,'distance': "0.0", 'xAverage': "0.5" }
     while True:
-        messageInfo = {'inShot': "", 'direction': "", 'centroid': "" ,'distance': "" }
         if(tofSensor.isDataReady()):
             tof_frame = tofSensor.get_frame_uint8()
             width, height = tof_frame.shape
@@ -297,42 +297,33 @@ def main():
             posXI = posX +1
             posXI /=2
             
-            print("Position", posXI)
             velocity_to_send = 0
             if(abs(velocity) > 0.25):
                 velocity_to_send = velocity
-            # print("Velocity", velocity_to_send)
-
-            # Calc left right
-            # rlCalc = calcLeftRight(binFrame1, binFrame2)
-            # print()
-            # print("direction",rlCalc['direction'])
-            # print("centroid",rlCalc['centroid'])
-            # print("distance",rlCalc['distance'])
             
             #Optical Flow
             # flow_visual = calcOpticalFlow(tof_frame, last_tof_frame)
-            print("blobCentre", blobCentre)
-            print("distance_at_centroid", get_distance_from_blob_centroid(tof_frame, blobCentre))
 
             if(blobCentre!=None):
-                messageInfo['inShot'] = 1
-                messageInfo["centroid"] = blobCentre
-                distance_at_centroid = tof_frame[blobCentre]
+                messageInfo["inShot"] = int(1)
+                messageInfo["centroid.x"] = blobCentre[0]
+                messageInfo["centroid.y"] = blobCentre[1]
+                messageInfo["distance"] = int(get_distance_from_blob_centroid(tof_frame, blobCentre))
+                messageInfo["xAverage"] = float(posXI)
             else:
-                messageInfo['inShot'] = 0
+                messageInfo['inShot'] = int(0)
             
-            
+            flow_visual = tof_frame
 
             
-            # messageInfo["distance"] = 
-            flow_visual = tof_frame
-            
-            #message = json.dumps(messageInfo).encode('utf-8')
-            #sock.sendto(message, (target_ip, target_port))
+            message = json.dumps(messageInfo).encode('utf-8')
+            sock.sendto(message, (target_ip, target_port))
 
             # Resize images for visualization
             if(DEBUG):
+                for mess in messageInfo.items():
+                    print(mess)
+                
                 flow_resized = cv2.resize(flow_visual, (256, 256), interpolation=cv2.INTER_NEAREST)
                 frame1_resized = cv2.resize(tof_frame, (256, 256), interpolation=cv2.INTER_NEAREST)
                 binFrame = cv2.resize(binFrame1, (256, 256), interpolation=cv2.INTER_NEAREST)
